@@ -1,0 +1,899 @@
+openapi: 3.0.0
+info:
+  title: Auth Service API
+  description: |
+    Сервис аутентификации и авторизации.
+    Отвечает за выдачу токенов, управление сессиями, проверку прав доступа.
+    Работает в связке с Users Service, где хранятся данные пользователей.
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@example.com
+
+servers:
+  - url: http://localhost:3001/api/v1/auth
+    description: Local development
+  - url: https://api.example.com/v1/auth
+    description: Production server
+
+tags:
+  - name: noAuth
+    description: Доступно всем, авторизация не нужна
+  - name: authOnly
+    description: Доступно любому авторизованному пользователю
+  - name: adminOnly
+    description: Доступно только для администраторов
+  - name: internal
+    description: Внутренние эндпоинты для других сервисов
+
+paths:
+  # ========== АУТЕНТИФИКАЦИЯ ==========
+  /login:
+    post:
+      summary: Вход в систему
+      description: |
+        Аутентификация пользователя по email/username и паролю.
+        При успешном входе возвращает access и refresh токены.
+        Refresh token сохраняется в httpOnly cookie.
+      tags:
+        - noAuth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - login
+                - password
+              properties:
+                login:
+                  type: string
+                  description: Email или username пользователя
+                  example: "john.doe@example.com"
+                password:
+                  $ref: '#/components/schemas/Password'
+                remember_me:
+                  type: boolean
+                  description: Запомнить устройство (увеличивает срок жизни refresh token)
+                  default: false
+      responses:
+        '200':
+          description: Успешная аутентификация
+          headers:
+            Set-Cookie:
+              description: Refresh token в httpOnly cookie
+              schema:
+                type: string
+                example: "refresh_token=eyJhbGciOiJIUzI1NiIs...; HttpOnly; Secure; SameSite=Strict"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Неверные учетные данные
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "INVALID_CREDENTIALS"
+                message: "Invalid email or password"
+                timestamp: "2024-03-15T10:30:00Z"
+        '403':
+          description: Доступ заблокирован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "ACCOUNT_BLOCKED"
+                message: "Your account has been blocked. Contact support."
+                timestamp: "2024-03-15T10:30:00Z"
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /logout:
+    post:
+      summary: Выход из системы
+      description: |
+        Завершает сессию пользователя.
+        Инвалидирует refresh token и добавляет access token в черный список.
+      tags:
+        - authOnly
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Успешный выход
+          headers:
+            Set-Cookie:
+              description: Удаление refresh token cookie
+              schema:
+                type: string
+                example: "refresh_token=; HttpOnly; Secure; SameSite=Strict; Max-Age=0"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /refresh:
+    post:
+      summary: Обновление access токена
+      description: |
+        Получение нового access токена с использованием refresh token.
+        Refresh token должен быть передан в cookie.
+      tags:
+        - noAuth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token:
+                  type: string
+                  description: Refresh token (опционально, если не передан в cookie)
+      responses:
+        '200':
+          description: Новый access токен
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                    description: Новый JWT access token
+                  expires_in:
+                    type: integer
+                    description: Время жизни токена в секундах
+                    example: 900
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Невалидный или истекший refresh token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  # ========== РЕГИСТРАЦИЯ (ПРОКСИ В USERS SERVICE) ==========
+  /register:
+    post:
+      summary: Регистрация нового пользователя
+      description: |
+        Прокси-эндпоинт для регистрации.
+        Передает запрос в Users Service и при успехе создает сессию.
+      tags:
+        - noAuth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - username
+                - password
+              properties:
+                email:
+                  $ref: '#/components/schemas/Email'
+                username:
+                  $ref: '#/components/schemas/Username'
+                password:
+                  $ref: '#/components/schemas/Password'
+                first_name:
+                  $ref: '#/components/schemas/FirstName'
+                last_name:
+                  $ref: '#/components/schemas/LastName'
+                phone:
+                  $ref: '#/components/schemas/Phone'
+      responses:
+        '201':
+          description: Пользователь успешно создан и авторизован
+          headers:
+            Set-Cookie:
+              description: Refresh token в httpOnly cookie
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Пользователь уже существует
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  # ========== УПРАВЛЕНИЕ ТОКЕНАМИ ==========
+  /validate:
+    post:
+      summary: Проверка валидности токена
+      description: |
+        Внутренний эндпоинт для проверки токена другими сервисами.
+        Возвращает информацию о пользователе и правах доступа.
+      tags:
+        - internal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - token
+              properties:
+                token:
+                  type: string
+                  description: JWT access token для проверки
+      responses:
+        '200':
+          description: Токен валиден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenValidationResponse'
+        '401':
+          description: Невалидный или истекший токен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /sessions:
+    get:
+      summary: Получение списка активных сессий
+      description: |
+        Возвращает список всех активных сессий текущего пользователя.
+        Доступно только авторизованным пользователям.
+      tags:
+        - authOnly
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+      responses:
+        '200':
+          description: Список активных сессий
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionsListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /sessions/{session_id}:
+    delete:
+      summary: Завершение конкретной сессии
+      description: |
+        Принудительное завершение указанной сессии.
+        Пользователь может завершить только свои сессии, администратор - любые.
+      tags:
+        - authOnly
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Сессия успешно завершена
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Сессия не найдена
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /sessions/terminate-all:
+    post:
+      summary: Завершение всех сессий
+      description: |
+        Завершает все активные сессии пользователя, кроме текущей.
+        Полезно при смене пароля или подозрении на компрометацию.
+      tags:
+        - authOnly
+      security:
+        - bearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                exclude_current:
+                  type: boolean
+                  description: Оставить текущую сессию
+                  default: true
+      responses:
+        '204':
+          description: Все сессии завершены
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  # ========== 2FA / MFA ==========
+  /2fa/enable:
+    post:
+      summary: Включение двухфакторной аутентификации
+      description: |
+        Включает 2FA для текущего пользователя.
+        Возвращает QR код для настройки TOTP приложения.
+      tags:
+        - authOnly
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 2FA включена
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  secret:
+                    type: string
+                    description: TOTP секрет
+                  qr_code:
+                    type: string
+                    description: QR код в формате base64 или URL
+                  backup_codes:
+                    type: array
+                    items:
+                      type: string
+                    description: Резервные коды для восстановления доступа
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /2fa/verify:
+    post:
+      summary: Подтверждение 2FA
+      description: |
+        Подтверждение кода двухфакторной аутентификации при входе.
+      tags:
+        - noAuth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - temp_token
+                - code
+              properties:
+                temp_token:
+                  type: string
+                  description: Временный токен после успешного ввода пароля
+                code:
+                  type: string
+                  description: TOTP код из приложения-аутентификатора
+      responses:
+        '200':
+          description: 2FA пройдена успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Неверный код
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /2fa/disable:
+    post:
+      summary: Отключение двухфакторной аутентификации
+      description: |
+        Отключает 2FA для текущего пользователя.
+        Требуется подтверждение паролем или кодом.
+      tags:
+        - authOnly
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - code
+              properties:
+                code:
+                  type: string
+                  description: TOTP код или резервный код
+      responses:
+        '204':
+          description: 2FA отключена
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  # ========== АДМИНИСТРИРОВАНИЕ ==========
+  /admin/users/{user_id}/sessions:
+    get:
+      summary: Получение сессий пользователя (админ)
+      description: |
+        Возвращает все активные сессии указанного пользователя.
+        Только для администраторов.
+      tags:
+        - adminOnly
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Список сессий пользователя
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionsListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Пользователь не найден
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+    delete:
+      summary: Завершение всех сессий пользователя (админ)
+      description: |
+        Принудительно завершает все активные сессии указанного пользователя.
+        Только для администраторов.
+      tags:
+        - adminOnly
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Все сессии пользователя завершены
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Пользователь не найден
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /admin/blacklist:
+    get:
+      summary: Получение черного списка токенов
+      description: |
+        Возвращает список токенов в черном списке.
+        Только для администраторов.
+      tags:
+        - adminOnly
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Список заблокированных токенов
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BlacklistResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ========== ПРОВЕРКА ПРАВ ==========
+  /permissions/check:
+    post:
+      summary: Проверка прав доступа
+      description: |
+        Проверяет, имеет ли пользователь указанные разрешения.
+        Используется другими сервисами для авторизации.
+      tags:
+        - internal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - user_id
+                - permissions
+              properties:
+                user_id:
+                  type: string
+                  format: uuid
+                permissions:
+                  type: array
+                  items:
+                    type: string
+                  example: ["users:read", "users:write"]
+      responses:
+        '200':
+          description: Результат проверки прав
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  has_all:
+                    type: boolean
+                    description: Есть ли все права
+                  permissions:
+                    type: object
+                    additionalProperties:
+                      type: boolean
+                    description: Результат по каждому праву
+        '404':
+          description: Пользователь не найден
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  # ========== СИСТЕМНЫЕ ЭНДПОИНТЫ ==========
+  /health:
+    get:
+      summary: Проверка здоровья сервиса
+      tags:
+        - noAuth
+      responses:
+        '200':
+          description: Сервис работает
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+                  version:
+                    type: string
+                    example: "1.0.0"
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /metrics:
+    get:
+      summary: Метрики сервиса (Prometheus)
+      tags:
+        - internal
+      responses:
+        '200':
+          description: Метрики в формате Prometheus
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT access token для авторизации запросов
+
+  responses:
+    BadRequest:
+      description: Невалидные данные ввода
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Неавторизованный доступ
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Доступ запрещен (недостаточно прав)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Ресурс не найден
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ServerError:
+      description: Внутренняя ошибка сервера
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "INTERNAL_ERROR"
+            message: "Something went wrong"
+            request_id: "req_abc123"
+            timestamp: "2024-03-15T10:30:00Z"
+
+  schemas:
+    # ========== БАЗОВЫЕ ТИПЫ ==========
+    Email:
+      type: string
+      format: email
+      description: Email пользователя
+      example: "john.doe@example.com"
+    
+    Username:
+      type: string
+      minLength: 3
+      maxLength: 100
+      pattern: "^[a-zA-Z0-9_]+$"
+      description: Имя пользователя
+      example: "johndoe"
+    
+    Password:
+      type: string
+      minLength: 8
+      maxLength: 255
+      description: Пароль (минимум 8 символов)
+      example: "SecurePass123"
+      format: password
+    
+    FirstName:
+      type: string
+      maxLength: 100
+      description: Имя
+      example: "John"
+    
+    LastName:
+      type: string
+      maxLength: 100
+      description: Фамилия
+      example: "Doe"
+    
+    Phone:
+      type: string
+      pattern: "^\\+?[1-9][0-9]{7,14}$"
+      description: Номер телефона
+      example: "+1234567890"
+
+    # ========== ОТВЕТЫ ==========
+    LoginResponse:
+      type: object
+      required:
+        - access_token
+        - expires_in
+        - token_type
+        - user
+      properties:
+        access_token:
+          type: string
+          description: JWT access token
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        expires_in:
+          type: integer
+          description: Время жизни access token в секундах
+          example: 900
+        token_type:
+          type: string
+          description: Тип токена
+          example: "Bearer"
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            email:
+              type: string
+              format: email
+            username:
+              type: string
+            first_name:
+              type: string
+              nullable: true
+            last_name:
+              type: string
+              nullable: true
+            role:
+              type: string
+              enum: [user, moderator, admin]
+    
+    TokenValidationResponse:
+      type: object
+      required:
+        - valid
+        - user_id
+        - role
+        - permissions
+      properties:
+        valid:
+          type: boolean
+          description: Валидность токена
+        user_id:
+          type: string
+          format: uuid
+          description: ID пользователя
+        email:
+          type: string
+          format: email
+          description: Email пользователя
+        role:
+          type: string
+          enum: [user, moderator, admin]
+          description: Роль пользователя
+        permissions:
+          type: array
+          items:
+            type: string
+          description: Список прав доступа
+        exp:
+          type: integer
+          description: Время истечения токена (unix timestamp)
+        iat:
+          type: integer
+          description: Время выдачи токена (unix timestamp)
+    
+    Session:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        user_agent:
+          type: string
+          description: User-Agent устройства
+        ip_address:
+          type: string
+          description: IP адрес
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        last_activity_at:
+          type: string
+          format: date-time
+        is_current:
+          type: boolean
+          description: Является ли текущей сессией
+    
+    SessionsListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Session'
+        pagination:
+          type: object
+          properties:
+            page:
+              type: integer
+            limit:
+              type: integer
+            total:
+              type: integer
+            pages:
+              type: integer
+    
+    BlacklistResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              token_hash:
+                type: string
+              expires_at:
+                type: string
+                format: date-time
+              created_at:
+                type: string
+                format: date-time
+        pagination:
+          type: object
+          properties:
+            page:
+              type: integer
+            limit:
+              type: integer
+            total:
+              type: integer
+    
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+        - timestamp
+      properties:
+        error:
+          type: string
+          description: Код ошибки
+          example: "VALIDATION_ERROR"
+        message:
+          type: string
+          description: Сообщение об ошибке
+          example: "Invalid email format"
+        details:
+          type: object
+          description: Детали ошибки
+          additionalProperties: true
+        request_id:
+          type: string
+          description: Идентификатор запроса для отладки
+          example: "req_abc123"
+        timestamp:
+          type: string
+          format: date-time
+          description: Время возникновения ошибки
