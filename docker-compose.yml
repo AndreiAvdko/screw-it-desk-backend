@@ -1,0 +1,89 @@
+services:
+  auth-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: auth_user
+      POSTGRES_PASSWORD: auth_pass
+      POSTGRES_DB: auth_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - auth_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U auth_user -d auth_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  users-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: users_user
+      POSTGRES_PASSWORD: users_pass
+      POSTGRES_DB: users_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - users_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U users_user -d users_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  auth-service:
+    build:
+      context: ./services/auth  # ← контекст = папка сервиса
+      dockerfile: Dockerfile.dev
+    environment:
+      DB_HOST: auth-db
+      DB_PORT: 5432
+      DB_USER: auth_user
+      DB_PASSWORD: auth_pass
+      DB_NAME: auth_db
+      SERVER_PORT: 8081
+    ports:
+      - "8081:8081"
+      - "2345:2345"
+    volumes:
+      - ./services/auth:/app
+      - ./pkg:/app/pkg
+    depends_on:
+      auth-db:
+        condition: service_healthy
+    networks:
+      - backend
+
+  users-service:
+    build:
+      context: ./services/users
+      dockerfile: Dockerfile.dev
+    environment:
+      DB_HOST: users-db
+      DB_PORT: 5432
+      DB_USER: users_user
+      DB_PASSWORD: users_pass
+      DB_NAME: users_db
+      SERVER_PORT: 8082
+      AUTH_SERVICE_URL: http://auth-service:8081
+    ports:
+      - "8082:8082"
+      - "2346:2346"
+    volumes:
+      - ./services/users:/app
+      - ./pkg:/app/pkg
+    depends_on:
+      users-db:
+        condition: service_healthy
+      auth-service:
+        condition: service_started
+    networks:
+      - backend
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  auth_db_data:
+  users_db_data:

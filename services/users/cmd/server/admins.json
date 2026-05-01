@@ -1,0 +1,54 @@
+{
+  "admins": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440001",
+      "email": "ivan@example.com",
+      "username": "ivanov_i",
+      "firstName": "Иван",
+      "lastName": "Иванов",
+      "phone": "+79001234567",
+      "role": "admin",
+      "status": "active"
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440002",
+      "email": "petr@example.com",
+      "username": "petrov_p",
+      "firstName": "Петр",
+      "lastName": "Петров",
+      "phone": "+79007654321",
+      "role": "admin",
+      "status": "active"
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440003",
+      "email": "anna@example.com",
+      "username": "sidorova_a",
+      "firstName": "Анна",
+      "lastName": "Сидорова",
+      "phone": "+79009998877",
+      "role": "admin",
+      "status": "active"
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440004",
+      "email": "sergey@example.com",
+      "username": "sergeev_s",
+      "firstName": "Сергей",
+      "lastName": "Сергеев",
+      "phone": "+79005556677",
+      "role": "admin",
+      "status": "active"
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440005",
+      "email": "elena@example.com",
+      "username": "elena_k",
+      "firstName": "Елена",
+      "lastName": "Кузнецова",
+      "phone": "+79003334455",
+      "role": "admin",
+      "status": "active"
+    }
+  ]
+}

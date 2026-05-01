@@ -1,0 +1,64 @@
+{
+  "customers": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440010",
+      "email": "company1@example.com",
+      "username": "company1_user",
+      "firstName": "Иван",
+      "lastName": "Петров",
+      "phone": "+79001112233",
+      "role": "customer",
+      "status": "active",
+      "organization": "ООО Ромашка",
+      "ticketsCount": 15
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440011",
+      "email": "company2@example.com",
+      "username": "company2_user",
+      "firstName": "Мария",
+      "lastName": "Сидорова",
+      "phone": "+79004445566",
+      "role": "customer",
+      "status": "active",
+      "organization": "ИП Иванова",
+      "ticketsCount": 8
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440012",
+      "email": "company3@example.com",
+      "username": "company3_user",
+      "firstName": "Алексей",
+      "lastName": "Козлов",
+      "phone": "+79007778899",
+      "role": "customer",
+      "status": "inactive",
+      "organization": "ЗАО ТехноСервис",
+      "ticketsCount": 23
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440013",
+      "email": "company4@example.com",
+      "username": "company4_user",
+      "firstName": "Елена",
+      "lastName": "Морозова",
+      "phone": "+79009990011",
+      "role": "customer",
+      "status": "active",
+      "organization": "ООО СтройИнвест",
+      "ticketsCount": 42
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440014",
+      "email": "company5@example.com",
+      "username": "company5_user",
+      "firstName": "Дмитрий",
+      "lastName": "Новиков",
+      "phone": "+79002223344",
+      "role": "customer",
+      "status": "blocked",
+      "organization": "АО Альянс",
+      "ticketsCount": 5
+    }
+  ]
+}

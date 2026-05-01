@@ -1,0 +1,43 @@
+.PHONY: help up down logs migrate-auth migrate-users dev-auth dev-users clean build
+
+help:
+	@echo "Available commands:"
+	@echo "  make up           - Запустить все БД и сервисы"
+	@echo "  make down         - Остановить всё"
+	@echo "  make logs         - Посмотреть логи"
+	@echo "  make migrate-auth - Запустить миграции для auth сервиса"
+	@echo "  make migrate-users- Запустить миграции для users сервиса"
+	@echo "  make dev-auth     - Запустить только auth сервис + его БД"
+	@echo "  make dev-users    - Запустить только users сервис + его БД"
+	@echo "  make build        - Собрать Docker образы"
+	@echo "  make clean        - Очистить volumes"
+
+up:
+	docker-compose up -d
+
+down:
+	docker-compose down
+
+logs:
+	docker-compose logs -f
+
+migrate-auth:
+	docker-compose exec auth-service go run cmd/server/main.go migrate
+
+migrate-users:
+	docker-compose exec users-service go run cmd/server/main.go migrate
+
+dev-auth:
+	docker-compose up -d auth-db
+	docker-compose up auth-service
+
+dev-users:
+	docker-compose up -d users-db auth-db
+	docker-compose up users-service
+
+build:
+	docker-compose build
+
+clean:
+	docker-compose down -v
+

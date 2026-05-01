@@ -1,0 +1,204 @@
+// package main
+
+// import (
+// 	"encoding/json"
+// 	"fmt"
+// 	"net/http"
+// 	"os"
+// 	"path/filepath"
+// 	"strconv"
+
+// 	"github.com/go-chi/chi/v5"
+// 	"github.com/go-chi/chi/v5/middleware"
+// )
+
+// func main() {
+// 	if err := loadAdminsFromFile(); err != nil {
+// 		fmt.Printf("Error loading admins.json: %v\n", err)
+// 		adminsCache = []UserResponse{}
+// 	}
+
+// 	if err := loadCustomersFromFile(); err != nil {
+// 		fmt.Printf("Error loading customers.json: %v\n", err)
+// 		customersCache = []CustomerResponse{}
+// 	}
+
+// 	r := chi.NewRouter()
+// 	r.Use(corsMiddleware)
+// 	r.Use(middleware.Logger)
+
+// 	r.Route("/v1", func(r chi.Router) {
+// 		r.Get("/users/admins", getAdminsHandler)
+// 		r.Get("/users/customers", getCustomersHandler)
+// 	})
+
+// 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+// 		w.Write([]byte("welcome"))
+// 	})
+
+// 	fmt.Println("Server starting on :3000")
+// 	http.ListenAndServe(":3000", r)
+// }
+
+// func loadAdminsFromFile() error {
+// 	currentDir, err := os.Getwd()
+// 	if err != nil {
+// 		return fmt.Errorf("cannot get current directory: %w", err)
+// 	}
+
+// 	filePath := filepath.Join(currentDir, "/admins.json")
+
+// 	byteValue, err := os.ReadFile(filePath)
+// 	if err != nil {
+// 		return fmt.Errorf("cannot read file: %w", err)
+// 	}
+
+// 	var rawData struct {
+// 		Admins []UserResponse `json:"admins"`
+// 	}
+
+// 	if err := json.Unmarshal(byteValue, &rawData); err != nil {
+// 		return fmt.Errorf("json parse error: %w", err)
+// 	}
+
+// 	adminsCache = rawData.Admins
+// 	fmt.Printf("Loaded %d admins from admins.json\n", len(adminsCache))
+
+// 	return nil
+// }
+
+// func loadCustomersFromFile() error {
+// 	currentDir, err := os.Getwd()
+// 	if err != nil {
+// 		return fmt.Errorf("cannot get current directory: %w", err)
+// 	}
+
+// 	filePath := filepath.Join(currentDir, "/customers.json")
+
+// 	byteValue, err := os.ReadFile(filePath)
+// 	if err != nil {
+// 		return fmt.Errorf("cannot read file: %w", err)
+// 	}
+
+// 	var rawData struct {
+// 		Customers []CustomerResponse `json:"customers"`
+// 	}
+
+// 	if err := json.Unmarshal(byteValue, &rawData); err != nil {
+// 		return fmt.Errorf("json parse error: %w", err)
+// 	}
+
+// 	customersCache = rawData.Customers
+// 	fmt.Printf("Loaded %d customers from customers.json\n", len(customersCache))
+
+// 	return nil
+// }
+
+// func corsMiddleware(next http.Handler) http.Handler {
+// 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// 		w.Header().Set("Access-Control-Allow-Origin", "*")
+// 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+// 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+// 		w.Header().Set("Access-Control-Allow-Credentials", "true")
+
+// 		if r.Method == http.MethodOptions {
+// 			w.WriteHeader(http.StatusOK)
+// 			return
+// 		}
+
+// 		next.ServeHTTP(w, r)
+// 	})
+// }
+
+// func getAdminsHandler(w http.ResponseWriter, r *http.Request) {
+// 	response := UsersListResponse{
+// 		Data: adminsCache,
+// 	}
+
+// 	w.Header().Set("Content-Type", "application/json")
+// 	w.WriteHeader(http.StatusOK)
+// 	json.NewEncoder(w).Encode(response)
+// }
+
+// func getCustomersHandler(w http.ResponseWriter, r *http.Request) {
+// 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+// 	if page < 1 {
+// 		page = 1
+// 	}
+
+// 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+// 	if limit < 1 {
+// 		limit = 20
+// 	}
+// 	if limit > 100 {
+// 		limit = 100
+// 	}
+
+// 	status := r.URL.Query().Get("status")
+// 	if status == "" {
+// 		status = "all"
+// 	}
+
+// 	sort := r.URL.Query().Get("sort")
+// 	if sort == "" {
+// 		sort = "createdAt:desc"
+// 	}
+
+// 	fmt.Printf("GET /v1/users/customers - page: %d, limit: %d, status: %s, sort: %s\n", page, limit, status, sort)
+
+// 	var filteredCustomers []CustomerResponse
+
+// 	if status == "all" {
+// 		filteredCustomers = customersCache
+// 	} else {
+// 		for _, customer := range customersCache {
+// 			if customer.Status == status {
+// 				filteredCustomers = append(filteredCustomers, customer)
+// 			}
+// 		}
+// 	}
+
+// 	total := len(filteredCustomers)
+// 	pages := (total + limit - 1) / limit
+// 	if pages == 0 && total == 0 {
+// 		pages = 1
+// 	}
+
+// 	if page > pages {
+// 		response := CustomersListResponse{
+// 			Data: []CustomerResponse{},
+// 			Pagination: Pagination{
+// 				Page:  page,
+// 				Limit: limit,
+// 				Total: total,
+// 				Pages: pages,
+// 			},
+// 		}
+// 		w.Header().Set("Content-Type", "application/json")
+// 		w.WriteHeader(http.StatusOK)
+// 		json.NewEncoder(w).Encode(response)
+// 		return
+// 	}
+
+// 	start := (page - 1) * limit
+// 	end := start + limit
+// 	if end > total {
+// 		end = total
+// 	}
+
+// 	paginatedCustomers := filteredCustomers[start:end]
+
+// 	response := CustomersListResponse{
+// 		Data: paginatedCustomers,
+// 		Pagination: Pagination{
+// 			Page:  page,
+// 			Limit: limit,
+// 			Total: total,
+// 			Pages: pages,
+// 		},
+// 	}
+
+// 	w.Header().Set("Content-Type", "application/json")
+// 	w.WriteHeader(http.StatusOK)
+// 	json.NewEncoder(w).Encode(response)
+// }

@@ -1,0 +1,818 @@
+openapi: 3.0.0
+info:
+  title: Permissions API
+  description: API для управления правами пользователей
+  version: 1.0.0
+
+servers:
+  - url: https://api.hubexlike.ru/api/v1
+    description: Production server
+  - url: http://localhost:3000/api/v1
+    description: Local development
+
+tags:
+  - name: Permissions
+    description: Права текущего пользователя
+  - name: Admin
+    description: Управление правами других пользователей и ролями
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Permission:
+      type: string
+      pattern: '^[a-z]+:[a-z]+\.[a-z]+(\*)?$'
+      example: "ticket:read.company"
+
+    PermissionsList:
+      type: array
+      items:
+        $ref: '#/components/schemas/Permission'
+      example: ["ticket:read.company", "ticket:create.*", "object:read.company"]
+
+    PermissionFilter:
+      type: object
+      properties:
+        resource:
+          type: string
+          enum: [ticket, object, user, report]
+        field:
+          type: string
+        operator:
+          type: string
+          enum: [eq, in, contains]
+        value:
+          oneOf:
+            - type: string
+            - type: integer
+            - type: array
+
+    UserPermissionsResponse:
+      type: object
+      properties:
+        user_id:
+          type: integer
+        role_id:
+          type: integer
+        role_name:
+          type: string
+        permissions:
+          $ref: '#/components/schemas/PermissionsList'
+        filters:
+          type: array
+          items:
+            $ref: '#/components/schemas/PermissionFilter'
+
+    UpdateUserPermissionsRequest:
+      type: object
+      properties:
+        role_id:
+          type: integer
+          description: ID роли (если меняем роль)
+        custom_permissions_add:
+          type: array
+          items:
+            $ref: '#/components/schemas/Permission'
+          description: Какие права добавить пользователю
+        custom_permissions_remove:
+          type: array
+          items:
+            $ref: '#/components/schemas/Permission'
+          description: Какие права запретить пользователю
+        filters:
+          type: array
+          items:
+            $ref: '#/components/schemas/PermissionFilter'
+          description: Фильтры видимости
+
+    Role:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        is_system:
+          type: boolean
+          description: Системную роль нельзя удалить или изменить
+        permissions:
+          $ref: '#/components/schemas/PermissionsList'
+        created_at:
+          type: string
+          format: date-time
+
+    CreateRoleRequest:
+      type: object
+      required:
+        - name
+        - permissions
+      properties:
+        name:
+          type: string
+          pattern: '^[a-z_]+$'
+          example: "quality_assurance"
+        description:
+          type: string
+        permissions:
+          $ref: '#/components/schemas/PermissionsList'
+        based_on:
+          type: integer
+          description: ID роли, на основе которой создаем (скопировать права)
+
+    UpdateRoleRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        permissions:
+          $ref: '#/components/schemas/PermissionsList'
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        status_code:
+          type: integer
+
+security:
+  - BearerAuth: []
+
+paths:
+  # ========== 1. ПРАВА ТЕКУЩЕГО ПОЛЬЗОВАТЕЛЯ ==========
+  
+  /me/permissions:
+    get:
+      tags:
+        - Permissions
+      summary: Получить права текущего пользователя
+      description: |
+        Возвращает права текущего авторизованного пользователя.
+        Права формируются из: роли + кастомных добавлений - кастомных запретов.
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPermissionsResponse'
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ========== 2-3. УПРАВЛЕНИЕ ПРАВАМИ ДРУГИХ ПОЛЬЗОВАТЕЛЕЙ ==========
+  
+  /users/{userId}/permissions:
+    get:
+      tags:
+        - Admin
+      summary: Получить права пользователя
+      description: Требует прав администратора
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPermissionsResponse'
+        '401':
+          description: Не авторизован
+        '403':
+          description: Нет прав (требуется роль admin)
+        '404':
+          description: Пользователь не найден
+
+    put:
+      tags:
+        - Admin
+      summary: Обновить права пользователя
+      description: Требует прав администратора
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserPermissionsRequest'
+      responses:
+        '200':
+          description: Права обновлены
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPermissionsResponse'
+        '400':
+          description: Неверные данные
+        '401':
+          description: Не авторизован
+        '403':
+          description: Нет прав
+        '404':
+          description: Пользователь не найден
+
+  # ========== 4-8. УПРАВЛЕНИЕ РОЛЯМИ ==========
+  
+  /roles:
+    get:
+      tags:
+        - Admin
+      summary: Получить список всех ролей
+      parameters:
+        - name: include_system
+          in: query
+          schema:
+            type: boolean
+            default: true
+          description: Включить системные роли
+      responses:
+        '200':
+          description: Список ролей
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Role'
+        '401':
+          description: Не авторизован
+        '403':
+          description: Нет прав
+
+    post:
+      tags:
+        - Admin
+      summary: Создать новую роль
+      description: |
+        Создает кастомную роль.
+        Системные роли (admin, customer_manager и т.д.) нельзя создать через этот эндпоинт.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRoleRequest'
+      responses:
+        '201':
+          description: Роль создана
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Role'
+        '400':
+          description: Неверные данные
+        '401':
+          description: Не авторизован
+        '403':
+          description: Нет прав
+        '409':
+          description: Роль с таким именем уже существует
+
+  /roles/{roleId}:
+    get:
+      tags:
+        - Admin
+      summary: Получить роль по ID
+      parameters:
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Данные роли
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Role'
+        '404':
+          description: Роль не найдена
+
+    put:
+      tags:
+        - Admin
+      summary: Обновить роль
+      description: Системные роли (is_system=true) нельзя изменять
+      parameters:
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRoleRequest'
+      responses:
+        '200':
+          description: Роль обновлена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Role'
+        '400':
+          description: Неверные данные
+        '401':
+          description: Не авторизован
+        '403':
+          description: Нельзя изменять системную роль
+        '404':
+          description: Роль не найдена
+
+    delete:
+      tags:
+        - Admin
+      summary: Удалить роль
+      description: |
+        Удаляет только кастомные роли.
+        Системные роли удалить нельзя.
+      parameters:
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Роль удалена
+        '401':
+          description: Не авторизован
+        '403':
+          description: Нельзя удалить системную роль
+        '404':
+          description: Роль не найдена
+          
+# ========== ВНУТРЕННИЕ ЭНДПОИНТЫ (gRPC) ==========
+  
+  /internal/permissions/check:
+    post:
+      tags:
+        - Internal
+      summary: Проверить право
+      x-internal: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - user_id
+                - permission
+              properties:
+                user_id:
+                  type: integer
+                permission:
+                  $ref: '#/components/schemas/Permission'
+                context:
+                  type: object
+                  properties:
+                    resource_type:
+                      type: string
+                    resource_id:
+                      type: integer
+                    resource_owner_id:
+                      type: integer
+                    resource_site_id:
+                      type: integer
+      responses:
+        '200':
+          description: Результат
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  allowed:
+                    type: boolean
+                  reason:
+                    type: string
+                  checked_at:
+                    type: string
+                    format: date-time
+
+  /internal/permissions/filter:
+    post:
+      tags:
+        - Internal
+      summary: Отфильтровать ресурсы
+      x-internal: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - user_id
+                - permission
+                - resources
+              properties:
+                user_id:
+                  type: integer
+                permission:
+                  $ref: '#/components/schemas/Permission'
+                resources:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                      owner_id:
+                        type: integer
+                      site_id:
+                        type: integer
+                      company_id:
+                        type: integer
+      responses:
+        '200':
+          description: Разрешенные ID
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  allowed_ids:
+                    type: array
+                    items:
+                      type: integer
+                  total:
+                    type: integer
+
+  /internal/permissions/cache/invalidate:
+    post:
+      tags:
+        - Internal
+      summary: Сбросить кэш
+      x-internal: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - user_id
+              properties:
+                user_id:
+                  type: integer
+                scope:
+                  type: string
+                  enum: [all, permissions, filters, attributes]
+                  default: all
+      responses:
+        '200':
+          description: Кэш сброшен
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+
+  /internal/permissions/check/batch:
+    post:
+      summary: Массовая проверка прав
+      tags:
+        - Internal
+      x-internal: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - user_id
+                - checks
+              properties:
+                user_id:
+                  type: integer
+                  example: 123
+                checks:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items:
+                    type: object
+                    required:
+                      - permission
+                    properties:
+                      permission:
+                        $ref: '#/components/schemas/Permission'
+                      context:
+                        type: object
+                        properties:
+                          resource_type:
+                            type: string
+                            enum: [ticket, object, user]
+                          resource_id:
+                            type: integer
+                          resource_owner_id:
+                            type: integer
+                          resource_site_id:
+                            type: integer
+      responses:
+        '200':
+          description: Успешная массовая проверка
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        permission:
+                          $ref: '#/components/schemas/Permission'
+                        allowed:
+                          type: boolean
+                          example: true
+                        reason:
+                          type: string
+                          example: "user has role customer_manager"
+                  summary:
+                    type: object
+                    properties:
+                      total:
+                        type: integer
+                        example: 10
+                      allowed_count:
+                        type: integer
+                        example: 7
+                      denied_count:
+                        type: integer
+                        example: 3
+                  processed_at:
+                    type: string
+                    format: date-time
+                    example: "2024-01-15T10:30:00Z"
+        '400':
+          description: Неверный запрос
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Нет прав на массовую проверку
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ========== WEBHOOK ==========
+
+  /internal/permissions/webhook/register:
+    post:
+      tags:
+        - Internal
+      summary: Зарегистрировать webhook на изменения прав
+      description: |
+        Сервисы регистрируют свои webhook эндпоинты для получения уведомлений
+        об изменениях прав пользователей.
+      x-internal: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - service_name
+                - endpoint
+                - events
+              properties:
+                service_name:
+                  type: string
+                  minLength: 1
+                  maxLength: 50
+                  pattern: '^[a-z_]+$'
+                  description: Уникальное имя сервиса
+                  example: "tasks_service"
+                endpoint:
+                  type: string
+                  format: uri
+                  description: URL для получения уведомлений
+                  example: "http://tasks-service:8080/internal/webhook/permissions"
+                events:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                    enum:
+                      - permission_updated
+                      - role_created
+                      - role_updated
+                      - role_deleted
+                  description: События, на которые подписывается сервис
+                  example: ["permission_updated", "role_deleted"]
+                secret:
+                  type: string
+                  description: Секрет для подписи webhook запросов (опционально)
+                  example: "whsec_abc123"
+                retry_config:
+                  type: object
+                  properties:
+                    max_attempts:
+                      type: integer
+                      minimum: 1
+                      maximum: 10
+                      default: 3
+                    backoff_seconds:
+                      type: integer
+                      minimum: 1
+                      maximum: 60
+                      default: 5
+      responses:
+        '201':
+          description: Webhook зарегистрирован
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  webhook_id:
+                    type: string
+                    format: uuid
+                    example: "550e8400-e29b-41d4-a716-446655440000"
+                  service_name:
+                    type: string
+                    example: "tasks_service"
+                  endpoint:
+                    type: string
+                    format: uri
+                    example: "http://tasks-service:8080/internal/webhook/permissions"
+                  events:
+                    type: array
+                    items:
+                      type: string
+                    example: ["permission_updated", "role_deleted"]
+                  status:
+                    type: string
+                    enum: [active, paused]
+                    example: "active"
+                  created_at:
+                    type: string
+                    format: date-time
+                  registered_at:
+                    type: string
+                    format: date-time
+        '400':
+          description: Неверный запрос
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Нет прав на регистрацию webhook
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Сервис с таким именем уже зарегистрирован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /internal/permissions/webhook/unregister:
+    delete:
+      tags:
+        - Internal
+      summary: Отменить регистрацию webhook
+      x-internal: true
+      parameters:
+        - name: service_name
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Имя сервиса для удаления
+      responses:
+        '200':
+          description: Webhook удален
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Webhook for tasks_service unregistered"
+        '404':
+          description: Webhook не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /internal/permissions/webhook/test:
+    post:
+      tags:
+        - Internal
+      summary: Отправить тестовое уведомление
+      x-internal: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                service_name:
+                  type: string
+                  example: "tasks_service"
+                event_type:
+                  type: string
+                  enum: [permission_updated, role_created, role_updated, role_deleted]
+                  example: "permission_updated"
+                payload:
+                  type: object
+                  properties:
+                    user_id:
+                      type: integer
+                      example: 123
+      responses:
+        '200':
+          description: Тестовое уведомление отправлено
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  delivery_status:
+                    type: object
+                    properties:
+                      endpoint:
+                        type: string
+                        format: uri
+                      status_code:
+                        type: integer
+                        example: 200
+                      duration_ms:
+                        type: integer
+                        example: 45
+        '404':
+          description: Webhook не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
