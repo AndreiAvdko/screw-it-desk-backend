@@ -30,7 +30,7 @@ type repo struct {
 	db db.Client
 }
 
-func NewRepository(db db.Client) repository.NoteRepository {
+func NewRepository(db db.Client) repository.UserRepository {
 	return &repo{db: db}
 }
 

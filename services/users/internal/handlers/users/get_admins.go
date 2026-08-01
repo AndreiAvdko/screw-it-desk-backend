@@ -1,4 +1,4 @@
-package users
+package handlers
 
 import (
 	"encoding/json"
@@ -8,9 +8,16 @@ import (
 	"path/filepath"
 )
 
+// TODO организовать handler как в payment-service репозитории с зависимостью через usecase
 var adminsCache []UserResponse
 
-func getAdminsHandler(w http.ResponseWriter, r *http.Request) {
+func GetAdminsHandler(w http.ResponseWriter, r *http.Request) {
+
+	if err := loadAdminsFromFile(); err != nil {
+		fmt.Printf("Error loading admins.json: %v\n", err)
+		adminsCache = []UserResponse{}
+	}
+
 	response := UsersListResponse{
 		Data: adminsCache,
 	}
@@ -21,19 +28,12 @@ func getAdminsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func loadAdminsFromFile() error {
-
-	// Загрузка моковых данных из файлов
-	if err := loadAdminsFromFile(); err != nil {
-		fmt.Printf("Error loading admins.json: %v\n", err)
-		adminsCache = []UserResponse{}
-	}
-
 	currentDir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("cannot get current directory: %w", err)
 	}
 
-	filePath := filepath.Join(currentDir, "/admins.json")
+	filePath := filepath.Join(currentDir, "/mocks/admins.json")
 
 	byteValue, err := os.ReadFile(filePath)
 	if err != nil {

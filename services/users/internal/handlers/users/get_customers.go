@@ -1,4 +1,4 @@
-package users
+package handlers
 
 import (
 	"encoding/json"
@@ -11,7 +11,7 @@ import (
 
 var customersCache []CustomerResponse
 
-func getCustomersHandler(w http.ResponseWriter, r *http.Request) {
+func GetCustomersHandler(w http.ResponseWriter, r *http.Request) {
 	if err := loadCustomersFromFile(); err != nil {
 		fmt.Printf("Error loading customers.json: %v\n", err)
 		customersCache = []CustomerResponse{}

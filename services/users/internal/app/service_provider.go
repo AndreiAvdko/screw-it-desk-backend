@@ -21,15 +21,13 @@ import (
 
 type serviceProvider struct {
 	pgConfig   config.PGConfig
-	grpcConfig config.HTTPConfig
+	httpConfig config.HTTPConfig
 
 	dbClient       db.Client
 	txManager      db.TxManager
-	noteRepository repository.NoteRepository
+	noteRepository repository.UserRepository
 
-	noteService service.NoteService
-
-	noteImpl *note.Implementation
+	noteService service.UserService
 }
 
 func newServiceProvider() *serviceProvider {
@@ -49,17 +47,17 @@ func (s *serviceProvider) PGConfig() config.PGConfig {
 	return s.pgConfig
 }
 
-func (s *serviceProvider) GRPCConfig() config.HTTPConfig {
-	if s.grpcConfig == nil {
+func (s *serviceProvider) HTTPConfig() config.HTTPConfig {
+	if s.httpConfig == nil {
 		cfg, err := env.NewHTTPConfig()
 		if err != nil {
 			log.Fatalf("failed to get grpc config: %s", err.Error())
 		}
 
-		s.grpcConfig = cfg
+		s.httpConfig = cfg
 	}
 
-	return s.grpcConfig
+	return s.httpConfig
 }
 
 func (s *serviceProvider) DBClient(ctx context.Context) db.Client {
@@ -89,7 +87,7 @@ func (s *serviceProvider) TxManager(ctx context.Context) db.TxManager {
 	return s.txManager
 }
 
-func (s *serviceProvider) NoteRepository(ctx context.Context) repository.NoteRepository {
+func (s *serviceProvider) NoteRepository(ctx context.Context) repository.UserRepository {
 	if s.noteRepository == nil {
 		s.noteRepository = userRepository.NewRepository(s.DBClient(ctx))
 	}
@@ -97,7 +95,7 @@ func (s *serviceProvider) NoteRepository(ctx context.Context) repository.NoteRep
 	return s.noteRepository
 }
 
-func (s *serviceProvider) NoteService(ctx context.Context) service.NoteService {
+func (s *serviceProvider) NoteService(ctx context.Context) service.UserService {
 	if s.noteService == nil {
 		s.noteService = noteService.NewService(
 			s.NoteRepository(ctx),
@@ -106,12 +104,4 @@ func (s *serviceProvider) NoteService(ctx context.Context) service.NoteService {
 	}
 
 	return s.noteService
-}
-
-func (s *serviceProvider) NoteImpl(ctx context.Context) *note.Implementation {
-	if s.noteImpl == nil {
-		s.noteImpl = note.NewImplementation(s.NoteService(ctx))
-	}
-
-	return s.noteImpl
 }

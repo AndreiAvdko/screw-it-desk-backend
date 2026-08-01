@@ -12,6 +12,11 @@ CREATE TABLE users (
     -- Статусы и роли
     role VARCHAR(50) DEFAULT 'user',
     status VARCHAR(50) DEFAULT 'active',
+
+    -- Данные профиля
+
+    -- URL аватара
+    avatar_url VARCHAR(512),
     
     -- Метаданные
     email_verified_at TIMESTAMP,
